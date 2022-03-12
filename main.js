@@ -13,20 +13,21 @@ const run = async () => {
   const BASE_URL = "https://www.annuaire-des-mairies.com/";
   const SCRAPPER = new Base("www.annuaire-des-mairies.com", BASE_URL);
 
-
   // check if scrapper has already been launched on a previous session
-  const fileName  = 'departements_and_townships_links'
+  const fileName = "departements_and_townships_links";
   const fileFullName = `${fileName}.json`;
-  const temp_data_file_path = join(process.cwd(), 'temp', fileFullName)
+  const temp_data_file_path = join(process.cwd(), "temp", fileFullName);
   let departementWithTownShips = null;
   try {
-    departementWithTownShips = readFileSync(temp_data_file_path, {encoding: 'utf-8'});
-    departementWithTownShips = JSON.parse(departementWithTownShips)
+    departementWithTownShips = readFileSync(temp_data_file_path, {
+      encoding: "utf-8",
+    });
+    departementWithTownShips = JSON.parse(departementWithTownShips);
   } catch (error) {
-    console.log(`temp data does not exists yet`)
+    console.log(`temp data does not exists yet`);
   }
 
-  if(!departementWithTownShips){
+  if (!departementWithTownShips) {
     await SCRAPPER.navigate();
     const departements = await SCRAPPER.extractFromPage(
       ".table.table-border.table-mobile.mobile-primary.bg-white a.lientxt"
@@ -39,11 +40,11 @@ const run = async () => {
       await SCRAPPER.navigate();
       let townships = await SCRAPPER.extractFromPage("a.lientxt");
       await pause(500);
-  
+
       for (let page = 1; page < 10; page++) {
         SCRAPPER.url =
           BASE_URL + `${departement.href.replace(".html", "")}-${page}.html`;
-  
+
         await SCRAPPER.navigate();
         const _townships = await SCRAPPER.extractFromPage("a.lientxt");
         if (_townships.length === 0 && page > 1) {
@@ -52,41 +53,50 @@ const run = async () => {
           townships = [...townships, ..._townships];
         }
       }
-  
+
       departementWithTownShips.push({
         ...departement,
         townships,
       });
     }
-    
+
     try {
-      writeFileSync(temp_data_file_path,  JSON.stringify(departementWithTownShips));
-      departementWithTownShips = readFileSync(temp_data_file_path, {encoding: 'utf-8'});
+      writeFileSync(
+        temp_data_file_path,
+        JSON.stringify(departementWithTownShips)
+      );
+      departementWithTownShips = readFileSync(temp_data_file_path, {
+        encoding: "utf-8",
+      });
     } catch (error) {
-      console.error(error)
+      console.error(error);
     }
   }
 
-
   const departementWithTownShipsDetails = [];
-  let currentDepartment = null
+  let currentDepartment = null;
   try {
-    const currentDepartmentPath = join(process.cwd(), 'temp', 'current_departement.json')
-    currentDepartment = JSON.parse(readFileSync(currentDepartmentPath, {encoding: 'utf-8'}))
+    const currentDepartmentPath = join(
+      process.cwd(),
+      "temp",
+      "current_departement.json"
+    );
+    currentDepartment = JSON.parse(
+      readFileSync(currentDepartmentPath, { encoding: "utf-8" })
+    );
   } catch (error) {
-    console.log(error)
-    currentDepartment = null
+    console.log(error);
+    currentDepartment = null;
   }
 
-  let departementIndex = currentDepartment? currentDepartment.index : 0;
+  let departementIndex = currentDepartment ? currentDepartment.index : 0;
 
   for (let i = departementIndex; i < departementWithTownShips.length; i++) {
-
     const departement = departementWithTownShips[i];
 
-    const path = join(process.cwd(), 'temp', 'current_departement.json')
-    writeFileSync(path, JSON.stringify({...departement, index: i}), {
-      encoding: 'utf-8'
+    const path = join(process.cwd(), "temp", "current_departement.json");
+    writeFileSync(path, JSON.stringify({ ...departement, index: i }), {
+      encoding: "utf-8",
     });
 
     const townshipsWithDetails = [];
@@ -132,29 +142,28 @@ const run = async () => {
               : null
             : null,
         });
-        departementWithTownShipsDetails.push({
-          ...departement,
-          townships: townshipsWithDetails,
-        });
       } catch (error) {
         console.error(departement.townships[j]);
-      }finally{
+      } finally {
         continue;
       }
     }
 
-    const fileName = departementWithTownShipsDetails[i].href.replace('.html', '')
-    const fileFullName = `${fileName}.json`;
+    const dataToWrite = {
+      ...departement,
+      townships: townshipsWithDetails,
+    };
+
     try {
-      writeFileSync(join(process.cwd(), 'data', fileFullName),  JSON.stringify(departementWithTownShipsDetails[i]))
+      const fileName = dataToWrite.href.replace(".html", "");
+      const fileFullName = `${fileName}.json`;
+      const filePath = join(process.cwd(), "data", fileFullName);
+      console.log(`writing file to ${filePath}`);
+      writeFileSync(filePath, JSON.stringify(dataToWrite));
     } catch (error) {
-      console.log(error)
+      console.log(error);
     }
-   
-  
   }
-  return departementWithTownShipsDetails;
 };
 
-run()
-.then(() => process.exit(0))
+run().then(() => process.exit(0));
