@@ -9,160 +9,92 @@ const pause = (pauseLengthMs) =>
     }, pauseLengthMs);
   });
 
+const loadPageResults = async (scrapper) => {
+  // load page results to end of page to circumvent lazy loading;
+  await scrapper.loadByCssSelector("div.entity-result__item");
+};
+
+const extractPagination = async (scrapper) => {
+  await scrapper.loadByCssSelector("div.artdeco-card.pv0.mb6");
+  // extract pagination to find out max result page
+  const paginationListItems = await scrapper.extractElementsByCssSelector(
+    "ul.artdeco-pagination__pages.artdeco-pagination__pages--number li button span",
+    {}
+  );
+  // maxPage is the last element value of the pagination
+  const maxPage = paginationListItems[paginationListItems.length - 1].text;
+  return maxPage;
+};
+
+const connect = async (
+  scrapper,
+  connectMessage = `Bonjour,\n\nJe suis à la recherche d'une alternance en tant que développeur web éligible à une aide exceptionnelle d'Etat de 8000 euros.\nVoici le lien vers mon portfolio: https://antoine-le-guillou.herokuapp.com/.\nJe vous remercie de votre attention.\n\nCordialement,\nAntoine LE GUILLOU`
+) => {
+  const connectButtons = await scrapper.extractElementsByCssSelector(
+    "div.entity-result__item .entity-result__actions.entity-result__divider div button"
+  );
+
+  const filteredConnectButtons = connectButtons.filter(
+    ({ text }) => text === "Se connecter"
+  );
+
+  for (const filteredConnectButton of filteredConnectButtons) {
+    await scrapper.clickOnElement(filteredConnectButton.ref);
+    await scrapper._checkElementIsPresent(
+      'div[aria-labelledby="send-invite-modal"]',
+      2000
+    );
+    await scrapper._checkElementIsPresent(
+      "div.artdeco-modal__actionbar.ember-view.text-align-right",
+      2000
+    );
+    await scrapper._checkElementIsPresent(
+      'div.artdeco-modal__actionbar.ember-view.text-align-right button[aria-label="Ajouter une note"]',
+      2000
+    );
+    await scrapper.clickOnElementByCssSelector(
+      'div.artdeco-modal__actionbar.ember-view.text-align-right button[aria-label="Ajouter une note"]'
+    );
+    await scrapper._checkElementIsPresent("textarea#custom-message", 2000);
+    await scrapper.fillElementWithText(
+      "textarea#custom-message",
+      connectMessage
+    );
+    await scrapper._checkElementIsPresent(
+      'button[aria-label="Envoyer maintenant"]',
+      2000
+    );
+    await scrapper.clickOnElementByCssSelector(
+      'button[aria-label="Envoyer maintenant"]'
+    );
+  }
+};
+
 const run = async () => {
-  const BASE_URL = "https://www.annuaire-des-mairies.com/";
-  const SCRAPPER = new Base("www.annuaire-des-mairies.com", BASE_URL);
+  // init scrapper
+  const AUTH_COOKIE = {
+    name: "li_at",
+    value:
+      "AQEDATNGsFYEhaN-AAABgN0gtD4AAAGBAS04PlYA0Kmihoo0VkeyVUNaBndJIG70tcJSEwYMJgYQW7hwJ8vk3kdKxUMaLohLeqRhJnWj7ahKE8Uasv5f0In5L0gV9Dkacfd846uQ2b0e_aod89TvpHMJ",
+  };
+  const DOMAIN = "https://www.linkedin.com";
+  const BASE_URL = `https://www.linkedin.com/search/results/people/?keywords=CEO%20AND%20web%20AND%20marseille&origin=SWITCH_SEARCH_VERTICAL&sid=pE%3A`;
+  const SCRAPPER = new Base(DOMAIN, BASE_URL, AUTH_COOKIE);
 
-  // check if scrapper has already been launched on a previous session
-  const fileName = "departements_and_townships_links";
-  const fileFullName = `${fileName}.json`;
-  const temp_data_file_path = join(process.cwd(), "temp", fileFullName);
-  let departementWithTownShips = null;
-  try {
-    departementWithTownShips = readFileSync(temp_data_file_path, {
-      encoding: "utf-8",
-    });
-    departementWithTownShips = JSON.parse(departementWithTownShips);
-  } catch (error) {
-    console.log(`temp data does not exists yet`);
-  }
+  await SCRAPPER.navigate();
+  await loadPageResults(SCRAPPER);
+  const maxPage = await extractPagination(SCRAPPER).then((value) =>
+    parseInt(value)
+  );
+  
+  //await connect(SCRAPPER);
 
-  if (!departementWithTownShips) {
+  while (SCRAPPER.page < maxPage) {
+    SCRAPPER.nextPage();
+    SCRAPPER.changeUrl(BASE_URL + `&page=${SCRAPPER.page}`);
     await SCRAPPER.navigate();
-    const departements = await SCRAPPER.extractFromPage(
-      ".table.table-border.table-mobile.mobile-primary.bg-white a.lientxt"
-    );
-    let departementWithTownShips = [];
-    for (let i = 0; i < departements.length; i++) {
-      //for (let i = 0; i < 1; i++) {
-      const departement = departements[i];
-      SCRAPPER.url = BASE_URL + departement.href;
-      await SCRAPPER.navigate();
-      let townships = await SCRAPPER.extractFromPage("a.lientxt");
-      await pause(500);
-
-      for (let page = 1; page < 10; page++) {
-        SCRAPPER.url =
-          BASE_URL + `${departement.href.replace(".html", "")}-${page}.html`;
-
-        await SCRAPPER.navigate();
-        const _townships = await SCRAPPER.extractFromPage("a.lientxt");
-        if (_townships.length === 0 && page > 1) {
-          break;
-        } else {
-          townships = [...townships, ..._townships];
-        }
-      }
-
-      departementWithTownShips.push({
-        ...departement,
-        townships,
-      });
-    }
-
-    try {
-      writeFileSync(
-        temp_data_file_path,
-        JSON.stringify(departementWithTownShips)
-      );
-      departementWithTownShips = readFileSync(temp_data_file_path, {
-        encoding: "utf-8",
-      });
-    } catch (error) {
-      console.error(error);
-    }
-  }
-
-  const departementWithTownShipsDetails = [];
-  let currentDepartment = null;
-  try {
-    const currentDepartmentPath = join(
-      process.cwd(),
-      "temp",
-      "current_departement.json"
-    );
-    currentDepartment = JSON.parse(
-      readFileSync(currentDepartmentPath, { encoding: "utf-8" })
-    );
-  } catch (error) {
-    console.log(error);
-    currentDepartment = null;
-  }
-
-  let departementIndex = currentDepartment ? currentDepartment.index : 0;
-
-  for (let i = departementIndex; i < departementWithTownShips.length; i++) {
-    const departement = departementWithTownShips[i];
-
-    const path = join(process.cwd(), "temp", "current_departement.json");
-    writeFileSync(path, JSON.stringify({ ...departement, index: i }), {
-      encoding: "utf-8",
-    });
-
-    const townshipsWithDetails = [];
-    for (let j = 0; j < departement.townships.length; j++) {
-      try {
-        const township = departement.townships[j];
-        SCRAPPER.url = BASE_URL + township.href;
-        await SCRAPPER.navigate();
-        const phone = await SCRAPPER.extractFromPage(
-          "table:first-child tr:nth-child(2) td:nth-child(2)",
-          { text: true }
-        );
-        const email = await SCRAPPER.extractFromPage(
-          "table:first-child tr:nth-child(4) td:nth-child(2)",
-          { text: true }
-        );
-        const population = await SCRAPPER.extractFromPage(
-          "table:nth-child(2) tr:nth-child(2) td:nth-child(2)",
-          { text: true }
-        );
-        const website = await SCRAPPER.extractFromPage(
-          "table:first-child tr:nth-child(5) td:nth-child(2)",
-          { text: true }
-        );
-        const townhallAdress = await SCRAPPER.extractFromPage(
-          "table:first-child tr:nth-child(1) td:nth-child(2)",
-          { text: true }
-        );
-        await pause(500);
-        townshipsWithDetails.push({
-          ...township,
-          phone: phone ? (phone[0] ? phone[0].text : null) : null,
-          email: email ? (email[0] ? email[0].text : null) : null,
-          population: population
-            ? population[0]
-              ? population[0].text
-              : null
-            : null,
-          website: website ? (website[0] ? website[0].text : null) : null,
-          townhallAdress: townhallAdress
-            ? townhallAdress[0]
-              ? townhallAdress[0].text
-              : null
-            : null,
-        });
-      } catch (error) {
-        console.error(departement.townships[j]);
-      } finally {
-        continue;
-      }
-    }
-
-    const dataToWrite = {
-      ...departement,
-      townships: townshipsWithDetails,
-    };
-
-    try {
-      const fileName = dataToWrite.href.replace(".html", "");
-      const fileFullName = `${fileName}.json`;
-      const filePath = join(process.cwd(), "data", fileFullName);
-      console.log(`writing file to ${filePath}`);
-      writeFileSync(filePath, JSON.stringify(dataToWrite));
-    } catch (error) {
-      console.log(error);
-    }
+    await loadPageResults(SCRAPPER);
+    //await connect(SCRAPPER);
   }
 };
 

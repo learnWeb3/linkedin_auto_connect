@@ -19,6 +19,82 @@ class Base {
     this.authenticationCookie = authenticationCookie;
   }
 
+  changeUrl(newUrl) {
+    this.url = newUrl;
+  }
+
+  nextPage() {
+    this.page = this.page + 1;
+  }
+
+  previousPage() {
+    if (this.page - 1 < 0) {
+      throw new Error("page value can't be less than 0");
+    }
+    this.page = this.page - 1;
+  }
+
+  async clickOnElement(element) {
+    await this.driver.executeScript("arguments[0].click();", element);
+  }
+
+  async clickOnElementByCssSelector(selector) {
+    await this.driver.executeScript(
+      "return document.querySelector(`" + `${selector}` + "`).click()"
+    );
+  }
+
+  async fillElementWithText(selector, text) {
+    const element = await this.driver.findElement(
+      this.webdriver.By.css(selector)
+    );
+    await element.sendKeys(text);
+  }
+
+  async extractElementsByCssSelector(selector, attributesToExtract = {}) {
+    const self = this;
+    return await self.driver
+      .findElements(this.webdriver.By.css(selector))
+      .then(async (elements) => {
+        return await Promise.all(
+          elements.map(async (element) => {
+            const extractedAttributes = {};
+            extractedAttributes["ref"] = element;
+            extractedAttributes["text"] = await element.getText();
+            for (const attributeKey in attributesToExtract) {
+              extractedAttributes[attributeKey] = await element.getAttribute(
+                attributeKey
+              );
+            }
+            return extractedAttributes;
+          })
+        );
+      });
+  }
+
+  async loadByCssSelector(selector) {
+    const self = this;
+    await self.driver
+      .findElements(this.webdriver.By.css(selector))
+      .then(
+        async (elements) =>
+          await Promise.all(
+            elements.map(async (element) => element.getAttribute("offsetTop"))
+          )
+      )
+      .then(
+        async (elementOffsetTops) =>
+          await Promise.all(
+            elementOffsetTops.map(
+              async (elementOffsetTop) =>
+                await self.driver.executeScript(
+                  `window.scrollTo({top: ${elementOffsetTop}})`
+                )
+            )
+          )
+      );
+  }
+
   async _checkElementIsPresent(selector, timeout) {
     return await this.driver
       .wait(
@@ -63,14 +139,11 @@ class Base {
     return html_doc;
   }
 
-  _nextPage() {
-    this.page = this.page + 1;
-  }
-  _previousPage() {
-    this.page = this.page - 1;
-  }
-
   async navigate() {
+    if (this.authenticationCookie) {
+      await this._addAuthenticationCookie();
+      await this._checkCookieIsPresent(this.authenticationCookie.name);
+    }
     await this.driver.get(this.url);
   }
 
@@ -81,14 +154,20 @@ class Base {
       href: true,
     }
   ) {
-    const cheerio = require("cheerio");
     const html_doc = await this._dumpHTML();
     let $ = cheerio.load(html_doc);
     const elements = Array.from($(targetedSelector));
     return elements.map((e) => {
       const obj = {};
       for (const key in extractOptions) {
-        obj[key] = key === "text" ?  $(e).text() ? $(e).text().trim() : "" :  $(e).attr(key) ? $(e).attr(key).trim() : "";
+        obj[key] =
+          key === "text"
+            ? $(e).text()
+              ? $(e).text().trim()
+              : ""
+            : $(e).attr(key)
+            ? $(e).attr(key).trim()
+            : "";
       }
       return obj;
     });
