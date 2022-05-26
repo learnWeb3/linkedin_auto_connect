@@ -30,8 +30,13 @@ CONNECT_MESSAGE="Message à envoyer lors de l'invitation \n pour aller a la lign
 npm run start
 ```
 
+## Troubleshots
+
+- Vérifier la version du chromedriver présent dans src/drivers
+
 ## Project Resources
 
 - [Visual Studio Code](https://code.visualstudio.com/)
 - [nodejs](https://nodejs.org/en/)
 - [selenium](https://github.com/SeleniumHQ/selenium)
+- [chromedirver](https://chromedriver.chromium.org/downloads)
